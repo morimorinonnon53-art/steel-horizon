@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>STEEL HORIZON — COMBAT PROTOTYPE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root{
+    --panel: #12161c;
+    --panel-edge: #2a323d;
+    --steel: #8a9bab;
+    --steel-dim: #4c5765;
+    --amber: #ff9a3d;
+    --amber-dim: #7a4c22;
+    --cyan: #5fe3f0;
+    --red: #ff4d4d;
+    --green: #6be089;
+    --bg-sky: #2a2320;
+  }
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;
+    font-family: 'Segoe UI', system-ui, sans-serif; color:var(--steel);}
+  #app{position:relative;width:100vw;height:100vh;}
+  canvas{display:block;width:100%;height:100%;}
+
+  .mono{font-family: 'Consolas','SFMono-Regular','Roboto Mono',monospace; letter-spacing:0.5px;}
+
+  /* ---------- HUD scaffolding ---------- */
+  #hud{position:absolute;inset:0;pointer-events:none;}
+  .panel{
+    background: linear-gradient(180deg, rgba(18,22,28,0.82), rgba(12,15,19,0.88));
+    border:1px solid var(--panel-edge);
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    padding:10px 14px;
+  }
+  .bar-shell{
+    position:relative; height:10px; width:220px; background:#0c0f13;
+    border:1px solid var(--panel-edge); overflow:hidden;
+  }
+  .bar-fill{position:absolute;left:0;top:0;bottom:0;width:100%;transition:width .12s linear;}
+  .bar-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;
+    text-transform:uppercase; color:var(--steel);}
+  .bar-label span.val{color:#fff;}
+
+  /* Top-left: unit status */
+  #statusPanel{position:absolute; top:16px; left:16px; width:250px;}
+  #statusPanel .callsign{font-size:13px; font-weight:700; color:#fff; letter-spacing:1px; margin-bottom:8px;}
+  #statusPanel .callsign small{display:block; font-size:10px; color:var(--steel-dim); font-weight:400; margin-top:2px;}
+
+  /* Top-right: mission + core drive */
+  #missionPanel{position:absolute; top:16px; right:16px; width:250px; text-align:right;}
+  #missionPanel .objective{font-size:12px; color:#fff; margin-bottom:8px; line-height:1.5;}
+  #coreDriveBox{margin-top:10px;}
+  #coreDriveLabel{font-size:11px; text-transform:uppercase; display:flex; justify-content:space-between;}
+  #coreKey{display:inline-block; border:1px solid var(--amber); color:var(--amber); padding:0 5px; margin-left:6px; font-size:10px;}
+
+  /* Bottom-left: right-arm weapon (blaster) heat */
+  #weaponRightPanel{position:absolute; bottom:16px; left:16px; width:230px;}
+  /* Bottom area center-left: left-arm weapon (missile) ammo */
+  #weaponLeftPanel{position:absolute; bottom:78px; left:16px; width:230px;}
+  /* Bottom-right: back weapons */
+  #backWeaponPanel{position:absolute; bottom:16px; right:16px; width:220px; text-align:right;}
+  .backItem{font-size:11px; margin-bottom:8px; text-transform:uppercase;}
+  .backItem .k{display:inline-block; border:1px solid var(--steel-dim); color:var(--steel); padding:0 5px; margin-right:6px;}
+
+  /* Crosshair + lock reticle */
+  #crosshair{position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px;}
+  #crosshair .c{position:absolute; background:var(--steel); opacity:.85;}
+  #crosshair .h1{width:9px;height:2px;left:0;top:12px;}
+  #crosshair .h2{width:9px;height:2px;right:0;top:12px;}
+  #crosshair .v1{height:9px;width:2px;top:0;left:12px;}
+  #crosshair .v2{height:9px;width:2px;bottom:0;left:12px;}
+  #crosshair.locked .c{background:var(--cyan);}
+
+  #lockPanel{position:absolute; left:50%; top:calc(50% + 40px); transform:translateX(-50%);
+    width:220px; text-align:center; display:none;}
+  #lockPanel .tname{font-size:12px; color:var(--cyan); text-transform:uppercase; margin-bottom:4px;}
+
+  /* enemy floating bars */
+  .enemyTag{position:absolute; width:64px; margin-left:-32px; margin-top:-46px; text-align:center; pointer-events:none;}
+  .enemyTag .ehp, .enemyTag .estag{height:4px; background:#0c0f13; border:1px solid #000; margin-top:2px;}
+  .enemyTag .ehpfill{height:100%; background:var(--red);}
+  .enemyTag .estagfill{height:100%; background:var(--cyan);}
+  .enemyTag .ename{font-size:9px; color:#fff; text-shadow:0 0 3px #000; text-transform:uppercase;}
+
+  /* center flash messages */
+  #flashMsg{position:absolute; left:50%; top:32%; transform:translate(-50%,-50%);
+    font-size:26px; font-weight:800; letter-spacing:3px; color:var(--amber);
+    text-shadow:0 0 12px rgba(255,154,61,0.7); opacity:0; text-align:center;}
+
+  /* Overlays */
+  .overlay{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; background:radial-gradient(ellipse at center, rgba(20,16,14,0.65), rgba(4,4,4,0.92));
+    pointer-events:all; text-align:center;}
+  .overlay h1{font-size:34px; letter-spacing:4px; color:#fff; margin:0 0 6px 0;}
+  .overlay h1 span{color:var(--amber);}
+  .overlay p{color:var(--steel); max-width:520px; line-height:1.7; font-size:14px;}
+  .overlay .ctrlgrid{display:grid; grid-template-columns:auto auto; gap:4px 18px; margin:18px 0;
+    font-size:13px; text-align:left;}
+  .overlay .ctrlgrid b{color:var(--cyan); font-family:'Consolas',monospace;}
+  .startbtn{margin-top:10px; background:var(--amber); color:#221200; border:none; padding:12px 34px;
+    font-size:15px; font-weight:700; letter-spacing:2px; cursor:pointer; text-transform:uppercase;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);}
+  .startbtn:hover{background:#ffb066;}
+  #resultTitle.win{color:var(--green);}
+  #resultTitle.lose{color:var(--red);}
+  #hint{position:absolute; bottom:8px; left:50%; transform:translateX(-50%); font-size:11px;
+    color:var(--steel-dim); pointer-events:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div id="statusPanel" class="panel">
+      <div class="callsign">FRAME-07 “WANDERER”<small>UNIT STATUS</small></div>
+      <div class="bar-label">AP <span class="val" id="apVal">1000/1000</span></div>
+      <div class="bar-shell"><div class="bar-fill" id="apBar" style="background:var(--green); width:100%;"></div></div>
+      <div class="bar-label" style="margin-top:8px;">BOOST <span class="val" id="boostVal">100</span></div>
+      <div class="bar-shell"><div class="bar-fill" id="boostBar" style="background:var(--cyan); width:100%;"></div></div>
+    </div>
+
+    <div id="missionPanel" class="panel">
+      <div class="objective mono" id="objectiveText">WAVE 1 — 廃都掃討: 敵反応 3</div>
+      <div id="coreDriveBox">
+        <div class="bar-label"><span>CORE DRIVE<span id="coreKey">R</span></span><span class="val" id="coreVal">0%</span></div>
+        <div class="bar-shell"><div class="bar-fill" id="coreBar" style="background:var(--amber); width:0%;"></div></div>
+      </div>
+    </div>
+
+    <div id="weaponLeftPanel" class="panel">
+      <div class="bar-label">L-ARM: MISSILE POD <span class="val" id="missileVal">6/6</span></div>
+      <div class="bar-shell"><div class="bar-fill" id="missileBar" style="background:var(--steel); width:100%;"></div></div>
+    </div>
+    <div id="weaponRightPanel" class="panel">
+      <div class="bar-label">R-ARM: BLASTER HEAT <span class="val" id="heatVal">0%</span></div>
+      <div class="bar-shell"><div class="bar-fill" id="heatBar" style="background:var(--amber); width:0%;"></div></div>
+    </div>
+
+    <div id="backWeaponPanel" class="panel">
+      <div class="backItem"><span class="k">Q</span>SHIELD <span class="val" id="shieldVal">READY</span></div>
+      <div class="backItem"><span class="k">E</span>CANNON <span class="val" id="cannonVal">READY</span></div>
+    </div>
+
+    <div id="crosshair">
+      <div class="c h1"></div><div class="c h2"></div><div class="c v1"></div><div class="c v2"></div>
+    </div>
+    <div id="lockPanel" class="panel">
+      <div class="tname" id="lockName">TARGET</div>
+      <div class="bar-shell" style="width:100%;"><div class="bar-fill" id="lockHp" style="background:var(--red);width:100%;"></div></div>
+      <div class="bar-shell" style="width:100%; margin-top:4px;"><div class="bar-fill" id="lockStag" style="background:var(--cyan);width:0%;"></div></div>
+    </div>
+
+    <div id="flashMsg" class="mono"></div>
+    <div id="hint" class="mono">ESC で照準ロック解除 / 再クリックで再開</div>
+  </div>
+
+  <div id="enemyTags"></div>
+
+  <div class="overlay" id="startOverlay">
+    <h1>STEEL <span>HORIZON</span></h1>
+    <p>荒廃した工業都市に投入された傭兵FRAME「WANDERER」を操縦し、敵部隊と大型兵器を撃破せよ。
+    敵にダメージを与え続けるとバランスを崩す「スタッガー」が発生し、大ダメージのチャンスが生まれる。</p>
+    <div class="ctrlgrid mono">
+      <div><b>W A S D</b></div><div>移動</div>
+      <div><b>MOUSE</b></div><div>視点操作 / 照準</div>
+      <div><b>LEFT CLICK</b></div><div>右腕武器: ブラスター</div>
+      <div><b>RIGHT CLICK</b></div><div>左腕武器: ミサイルポッド</div>
+      <div><b>Q</b></div><div>左背部: シールド展開</div>
+      <div><b>E</b></div><div>右背部: 大型キャノン</div>
+      <div><b>SHIFT</b></div><div>ブースト</div>
+      <div><b>SPACE</b></div><div>ジャンプ / ブースト中は上昇</div>
+      <div><b>R</b></div><div>CORE DRIVE 発動 (ゲージ満タン時)</div>
+    </div>
+    <button class="startbtn" id="startBtn">出撃する</button>
+  </div>
+
+  <div class="overlay" id="resultOverlay" style="display:none;">
+    <h1 id="resultTitle">MISSION COMPLETE</h1>
+    <p id="resultText"></p>
+    <button class="startbtn" id="retryBtn">再出撃する</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   基本セットアップ
+============================================================ */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+app.insertBefore(renderer.domElement, document.getElementById('hud'));
+const canvas = renderer.domElement;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x241d1a);
+scene.fog = new THREE.FogExp2(0x241d1a, 0.012);
+
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.1, 800);
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* Lighting: dusk warzone tone */
+scene.add(new THREE.HemisphereLight(0x8899aa, 0x201812, 0.9));
+const sun = new THREE.DirectionalLight(0xffb178, 1.15);
+sun.position.set(-60, 90, -40);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0x4a6a8a, 0.35);
+fill.position.set(50, 40, 60);
+scene.add(fill);
+
+/* Ground */
+const groundMat = new THREE.MeshStandardMaterial({color:0x23262b, roughness:0.95, metalness:0.05});
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1000,1000), groundMat);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+const grid = new THREE.GridHelper(1000, 100, 0x3a4753, 0x2a333c);
+grid.position.y = 0.02;
+scene.add(grid);
+
+/* Ruined city dressing */
+function addBuilding(x,z,w,h,d,color){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
+    new THREE.MeshStandardMaterial({color:color||0x2c3138, roughness:0.9, metalness:0.15}));
+  m.position.set(x,h/2,z);
+  m.rotation.y = Math.random()*0.2-0.1;
+  scene.add(m);
+  if(Math.random()<0.6){
+    const win = new THREE.Mesh(new THREE.BoxGeometry(w*0.15,h*0.15,d*0.15),
+      new THREE.MeshBasicMaterial({color:0xff9a3d}));
+    win.position.set(x + (Math.random()-0.5)*w*0.5, h*0.6, z + d/2 + 0.1);
+    scene.add(win);
+  }
+}
+(function scatterCity(){
+  const rng = ()=>Math.random();
+  for(let i=0;i<40;i++){
+    const ang = rng()*Math.PI*2;
+    const rad = 40 + rng()*260;
+    const x = Math.cos(ang)*rad, z = Math.sin(ang)*rad;
+    addBuilding(x,z, 6+rng()*14, 10+rng()*50, 6+rng()*14);
+  }
+})();
+
+/* ============================================================
+   ユーティリティ
+============================================================ */
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function lerp(a,b,t){return a+(b-a)*t;}
+function lerpAngle(a,b,t){
+  let diff = ((b-a+Math.PI)%(Math.PI*2))-Math.PI;
+  if(diff<-Math.PI) diff+=Math.PI*2;
+  return a+diff*t;
+}
+function raySphereHit(origin,dir,center,radius){
+  const oc = origin.clone().sub(center);
+  const b = oc.dot(dir);
+  const c = oc.dot(oc) - radius*radius;
+  const disc = b*b - c;
+  if(disc<0) return null;
+  const t = -b - Math.sqrt(disc);
+  return t>0 ? t : null;
+}
+
+/* ============================================================
+   FRAMEモデル生成
+============================================================ */
+function buildFrameMesh(scale, colorMain, colorAccent, glowColor){
+  const g = new THREE.Group();
+  const matMain = new THREE.MeshStandardMaterial({color:colorMain, roughness:0.55, metalness:0.6});
+  const matAccent = new THREE.MeshStandardMaterial({color:colorAccent, roughness:0.5, metalness:0.7});
+  const matGlow = new THREE.MeshBasicMaterial({color:glowColor});
+
+  const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.45,1.6,8), matMain);
+  legL.position.set(-0.5,0.8,0); g.add(legL);
+  const legR = legL.clone(); legR.position.x = 0.5; g.add(legR);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(1.6,1.4,1.0), matMain);
+  torso.position.set(0,2.3,0); g.add(torso);
+
+  const chestGlow = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.15), matGlow);
+  chestGlow.position.set(0,2.35,0.51); g.add(chestGlow);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.45,0.55), matAccent);
+  head.position.set(0,3.25,0.05); g.add(head);
+  const eye = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.08,0.05), matGlow);
+  eye.position.set(0,3.25,0.33); g.add(eye);
+
+  const backpack = new THREE.Mesh(new THREE.BoxGeometry(1.1,1.1,0.5), matAccent);
+  backpack.position.set(0,2.4,-0.65); g.add(backpack);
+  const thL = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,0.5,8), matGlow);
+  thL.position.set(-0.35,2.1,-0.9); thL.rotation.x = Math.PI/2; g.add(thL);
+  const thR = thL.clone(); thR.position.x = 0.35; g.add(thR);
+
+  const armGeo = new THREE.BoxGeometry(0.4,1.1,0.4);
+  const armL = new THREE.Mesh(armGeo, matAccent); armL.position.set(-1.05,2.15,0.1); g.add(armL);
+  const armR = new THREE.Mesh(armGeo, matAccent); armR.position.set(1.05,2.15,0.1); g.add(armR);
+  const barrelL = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.7,8), matMain);
+  barrelL.rotation.x = Math.PI/2; barrelL.position.set(-1.05,1.5,0.4); g.add(barrelL);
+  const barrelR = barrelL.clone(); barrelR.position.x = 1.05; g.add(barrelR);
+
+  g.scale.setScalar(scale);
+  g.userData.thrusters = [thL, thR];
+  g.userData.eye = eye;
+  return g;
+}
+
+const player = {
+  mesh: buildFrameMesh(1.0, 0x3c4650, 0x555f6a, 0x5fe3f0),
+  pos: new THREE.Vector3(0,0,20),
+  velY: 0,
+  yaw: Math.PI,
+  pitch: -0.05,
+  grounded: true,
+  ap: 1000, apMax: 1000,
+  boost: 100, boostMax: 100,
+  heat: 0, heatMax: 100, overheated:false,
+  missiles: 6, missilesMax: 6, missileCd:0, missileRegenCd:0,
+  shieldActive:false, shieldTimer:0, shieldCd:0, shieldCdMax:8,
+  cannonCd:0, cannonCdMax:4,
+  coreMeter:0, coreActive:false, coreTimer:0, coreDuration:8,
+  coreOverheat:false, coreOverheatTimer:0, coreOverheatMax:6,
+  alive:true
+};
+player.mesh.position.copy(player.pos);
+scene.add(player.mesh);
+
+/* ============================================================
+   敵FRAME
+============================================================ */
+const enemies = [];
+function spawnEnemy(type, x, z){
+  let hpMax, stagMax, scale, colorMain, colorAccent, glow, fireCdMax, projDmg, projSpeed, detect;
+  if(type==='grunt'){
+    hpMax=150; stagMax=100; scale=1.0; colorMain=0x5a3030; colorAccent=0x6d3a3a; glow=0xff5555;
+    fireCdMax=1.8; projDmg=25; projSpeed=26; detect=55;
+  }else{ // boss
+    hpMax=1400; stagMax=320; scale=3.2; colorMain=0x33261a; colorAccent=0x55402a; glow=0xffb347;
+    fireCdMax=1.1; projDmg=42; projSpeed=30; detect=90;
+  }
+  const mesh = buildFrameMesh(scale, colorMain, colorAccent, glow);
+  mesh.position.set(x,0,z);
+  scene.add(mesh);
+  const tag = document.createElement('div');
+  tag.className='enemyTag';
+  tag.innerHTML = `<div class="ename">${type==='grunt'?'SENTINEL':'IRON TITAN'}</div>
+    <div class="ehp"><div class="ehpfill" style="width:100%"></div></div>
+    <div class="estag"><div class="estagfill" style="width:0%"></div></div>`;
+  document.getElementById('enemyTags').appendChild(tag);
+
+  enemies.push({
+    type, mesh, tag,
+    hp:hpMax, hpMax, stag:0, stagMax,
+    staggered:false, staggerTimer:0,
+    fireCd: fireCdMax*Math.random(), fireCdMax, projDmg, projSpeed, detect,
+    burst:0, alive:true,
+    chestOffset: new THREE.Vector3(0, 2.3*scale, 0)
+  });
+}
+function spawnWave1(){
+  spawnEnemy('grunt', -18, -30);
+  spawnEnemy('grunt', 14, -40);
+  spawnEnemy('grunt', 0, -55);
+}
+let wave = 1;
+let missionState = 'wave1'; // wave1 -> bossIntro -> boss -> complete
+spawnWave1();
+
+/* ============================================================
+   入力
+============================================================ */
+const keys = {};
+let pointerLocked = false;
+let started = false;
+let paused = false;
+
+window.addEventListener('keydown', e=>{
+  keys[e.code]=true;
+  if(e.code==='KeyR') tryActivateCoreDrive();
+  if(e.code==='KeyQ') tryShield();
+  if(e.code==='KeyE') tryCannon();
+});
+window.addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+canvas.addEventListener('click', ()=>{
+  if(started && !pointerLocked) canvas.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', ()=>{
+  pointerLocked = document.pointerLockElement===canvas;
+  paused = started && !pointerLocked && player.alive && missionState!=='complete' && missionState!=='failed';
+});
+document.addEventListener('mousemove', e=>{
+  if(!pointerLocked) return;
+  player.yaw -= e.movementX*0.0022;
+  player.pitch -= e.movementY*0.0022;
+  player.pitch = clamp(player.pitch, -0.7, 0.9);
+});
+const firing = {right:false, left:false};
+canvas.addEventListener('mousedown', e=>{
+  if(!pointerLocked) return;
+  if(e.button===0) firing.right = true;
+  if(e.button===2) firing.left = true;
+});
+window.addEventListener('mouseup', e=>{
+  if(e.button===0) firing.right = false;
+  if(e.button===2) firing.left = false;
+});
+canvas.addEventListener('contextmenu', e=>e.preventDefault());
+
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  document.getElementById('startOverlay').style.display='none';
+  started = true;
+  canvas.requestPointerLock();
+});
+document.getElementById('retryBtn').addEventListener('click', ()=>{ location.reload(); });
+
+/* ============================================================
+   武器発射処理
+============================================================ */
+const tracers = []; // {mesh, life}
+const missiles = []; // player homing projectiles
+const enemyShots = []; // enemy projectiles
+
+function camForwardVec(){
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
+  return new THREE.Vector3(0,0,-1).applyQuaternion(q);
+}
+
+function getLockedTarget(maxAngle, maxDist){
+  const fwd = camForwardVec();
+  let best=null, bestAngle=maxAngle;
+  for(const en of enemies){
+    if(!en.alive) continue;
+    const chest = en.mesh.position.clone().add(en.chestOffset);
+    const toE = chest.clone().sub(camera.position);
+    const dist = toE.length();
+    if(dist>maxDist) continue;
+    toE.normalize();
+    const ang = Math.acos(clamp(fwd.dot(toE),-1,1));
+    if(ang<bestAngle){ bestAngle=ang; best=en; }
+  }
+  return best;
+}
+
+function damageEnemy(en, dmg, staggerGain){
+  if(!en.alive) return;
+  const mult = en.staggered ? 2.0 : 1.0;
+  en.hp -= dmg*mult;
+  if(!en.staggered){
+    en.stag += staggerGain;
+    if(en.stag>=en.stagMax){
+      en.staggered = true;
+      en.staggerTimer = 4.0;
+      en.stag = en.stagMax;
+      showFlash('STAGGER!!');
+    }
+  }
+  player.coreMeter = clamp(player.coreMeter + 5, 0, 100);
+  if(en.hp<=0 && en.alive){
+    en.alive = false;
+    en.hp = 0;
+    scene.remove(en.mesh);
+    en.tag.style.display='none';
+  }
+}
+
+function spawnTracer(from, to, color){
+  const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+  const mat = new THREE.LineBasicMaterial({color:color||0x5fe3f0, transparent:true, opacity:0.95});
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  tracers.push({mesh:line, life:0.08});
+}
+
+function fireBlaster(dt){
+  if(player.overheated) return;
+  if(player.heat>=player.heatMax){ player.overheated = true; showFlash('OVERHEAT'); return; }
+  player.heat = clamp(player.heat + (player.coreActive?4:6), 0, player.heatMax);
+  const dmg = player.coreActive ? 13 : 9;
+  const origin = camera.position.clone();
+  const dir = camForwardVec();
+  let closestT = 60, hitEnemy=null;
+  for(const en of enemies){
+    if(!en.alive) continue;
+    const r = en.type==='boss' ? 6.5 : 2.3;
+    const t = raySphereHit(origin, dir, en.mesh.position.clone().add(en.chestOffset), r);
+    if(t!==null && t<closestT){ closestT=t; hitEnemy=en; }
+  }
+  const endPoint = origin.clone().add(dir.clone().multiplyScalar(closestT));
+  spawnTracer(origin.clone().add(dir.clone().multiplyScalar(1.2)), endPoint, 0x5fe3f0);
+  if(hitEnemy) damageEnemy(hitEnemy, dmg, 6);
+}
+
+let blasterTimer = 0;
+
+function fireMissile(){
+  if(player.missiles<=0 || player.missileCd>0) return;
+  player.missiles--;
+  player.missileCd = 0.55;
+  const target = getLockedTarget(0.35, 120);
+  const origin = player.mesh.position.clone().add(new THREE.Vector3(-1.05,2.2,0.4));
+  const dir = camForwardVec();
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.6,8),
+    new THREE.MeshBasicMaterial({color:0xffcf7a}));
+  mesh.position.copy(origin);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+  scene.add(mesh);
+  missiles.push({mesh, pos:origin.clone(), dir:dir.clone(), speed:38, target, life:4.0, dmg: player.coreActive?52:38});
+}
+
+function tryShield(){
+  if(player.shieldCd>0 || player.shieldActive) return;
+  player.shieldActive = true;
+  player.shieldTimer = 3.0;
+  showFlash('SHIELD UP');
+}
+
+function tryCannon(){
+  if(player.cannonCd>0) return;
+  player.cannonCd = player.cannonCdMax;
+  const dmg = player.coreActive ? 120 : 90;
+  const origin = camera.position.clone();
+  const dir = camForwardVec();
+  let closestT = 90, hitEnemy=null;
+  for(const en of enemies){
+    if(!en.alive) continue;
+    const r = en.type==='boss' ? 6.5 : 2.3;
+    const t = raySphereHit(origin, dir, en.mesh.position.clone().add(en.chestOffset), r);
+    if(t!==null && t<closestT){ closestT=t; hitEnemy=en; }
+  }
+  const endPoint = origin.clone().add(dir.clone().multiplyScalar(closestT));
+  spawnTracer(origin.clone().add(dir.clone().multiplyScalar(1.2)), endPoint, 0xffb347);
+  if(hitEnemy) damageEnemy(hitEnemy, dmg, 35);
+  showFlash('CANNON FIRE');
+}
+
+function tryActivateCoreDrive(){
+  if(player.coreMeter>=100 && !player.coreActive && !player.coreOverheat){
+    player.coreActive = true;
+    player.coreTimer = player.coreDuration;
+    player.coreMeter = 0;
+    showFlash('CORE DRIVE!!');
+  }
+}
+
+/* ============================================================
+   フラッシュメッセージ
+============================================================ */
+let flashTimer = 0;
+function showFlash(text){
+  const el = document.getElementById('flashMsg');
+  el.textContent = text;
+  el.style.opacity = '1';
+  flashTimer = 1.3;
+}
+
+/* ============================================================
+   ゲーム進行 (ミッション状態)
+============================================================ */
+function checkMissionProgress(){
+  if(missionState==='wave1'){
+    if(enemies.every(e=>!e.alive)){
+      missionState='bossIntro';
+      flashTimer = 2.2;
+      showFlash('警告: 大型反応を確認');
+      document.getElementById('objectiveText').textContent = 'WARNING — 大型反応接近中';
+      setTimeout(()=>{
+        if(missionState==='bossIntro'){
+          spawnEnemy('boss', 0, -70);
+          missionState='boss';
+          document.getElementById('objectiveText').textContent = 'WAVE 2 — 大型兵器撃破: IRON TITAN';
+        }
+      }, 2400);
+    }
+  } else if(missionState==='boss'){
+    const boss = enemies.find(e=>e.type==='boss');
+    if(boss && !boss.alive){
+      missionState='complete';
+      endMission(true);
+    }
+  }
+}
+
+function endMission(win){
+  paused = true;
+  document.exitPointerLock();
+  const overlay = document.getElementById('resultOverlay');
+  const title = document.getElementById('resultTitle');
+  const text = document.getElementById('resultText');
+  overlay.style.display='flex';
+  if(win){
+    title.textContent = 'MISSION COMPLETE';
+    title.className = 'win';
+    text.textContent = '全敵反応を排除した。FRAME「WANDERER」は帰投する。';
+  }else{
+    title.textContent = 'OPERATION FAILED';
+    title.className = 'lose';
+    text.textContent = 'FRAMEが機能停止した。回収ポッドが起動する。';
+  }
+}
+
+/* ============================================================
+   メインループ
+============================================================ */
+let last = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  let dt = (now-last)/1000;
+  last = now;
+  dt = Math.min(dt, 0.05);
+
+  if(started && !paused && player.alive){
+    update(dt);
+  }
+  render();
+}
+
+function update(dt){
+  /* --- CORE DRIVE timers --- */
+  if(player.coreActive){
+    player.coreTimer -= dt;
+    if(player.coreTimer<=0){
+      player.coreActive=false;
+      player.coreOverheat=true;
+      player.coreOverheatTimer=player.coreOverheatMax;
+      showFlash('CORE DRIVE OVERHEAT');
+    }
+  }
+  if(player.coreOverheat){
+    player.coreOverheatTimer -= dt;
+    if(player.coreOverheatTimer<=0) player.coreOverheat=false;
+  }
+
+  /* --- movement --- */
+  const yawQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), player.yaw);
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(yawQ);
+  const right = new THREE.Vector3(1,0,0).applyQuaternion(yawQ);
+  let mx=0, mz=0;
+  if(keys['KeyW']) mz+=1;
+  if(keys['KeyS']) mz-=1;
+  if(keys['KeyD']) mx+=1;
+  if(keys['KeyA']) mx-=1;
+  const moveVec = new THREE.Vector3();
+  moveVec.addScaledVector(fwd, mz);
+  moveVec.addScaledVector(right, mx);
+  if(moveVec.lengthSq()>0) moveVec.normalize();
+
+  const wantBoost = keys['ShiftLeft']||keys['ShiftRight'];
+  const boosting = wantBoost && player.boost>0 && !player.coreOverheat;
+  const baseSpeed = 9.5;
+  const speed = boosting ? baseSpeed*2.5 : baseSpeed;
+
+  player.pos.addScaledVector(moveVec, speed*dt);
+
+  if(boosting){
+    player.boost = clamp(player.boost - 32*dt, 0, player.boostMax);
+    if(keys['Space']){ player.velY = Math.max(player.velY, 8); } // boosted ascend / flight
+  } else {
+    const regenMult = player.coreActive ? 3.0 : 1.0;
+    player.boost = clamp(player.boost + 14*dt*regenMult, 0, player.boostMax);
+  }
+
+  /* gravity / jump */
+  player.velY -= 24*dt;
+  if(player.pos.y<=0 && player.velY<0){ player.pos.y=0; player.velY=0; player.grounded=true; }
+  else player.grounded=false;
+  if(keys['Space'] && player.grounded && !boosting){ player.velY = 9.5; player.grounded=false; }
+  player.pos.y += player.velY*dt;
+  if(player.pos.y<0) player.pos.y=0;
+
+  const boundR = 340;
+  player.pos.x = clamp(player.pos.x, -boundR, boundR);
+  player.pos.z = clamp(player.pos.z, -boundR, boundR);
+
+  player.mesh.position.copy(player.pos);
+  player.mesh.rotation.y = player.yaw + Math.PI;
+
+  const thrusterGlow = boosting ? 1.0 : 0.25;
+  player.mesh.userData.thrusters.forEach(t=>{
+    t.material.color.setRGB(0.37*thrusterGlow+0.05, 0.89*thrusterGlow+0.05, 0.94*thrusterGlow+0.05);
+  });
+
+  /* --- camera (third person) --- */
+  const lookQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
+  const camFwd = new THREE.Vector3(0,0,-1).applyQuaternion(lookQ);
+  const chest = player.pos.clone().add(new THREE.Vector3(0,2.4,0));
+  const desiredCamPos = chest.clone().addScaledVector(camFwd, -7.5).add(new THREE.Vector3(0,1.4,0));
+  camera.position.lerp(desiredCamPos, 1-Math.pow(0.001, dt));
+  camera.quaternion.copy(lookQ);
+
+  /* --- heat decay / overheat recovery --- */
+  if(!firing.right){
+    player.heat = clamp(player.heat - 42*dt, 0, player.heatMax);
+  }
+  if(player.overheated && player.heat<=20) player.overheated=false;
+
+  /* --- blaster firing --- */
+  if(firing.right && !player.overheated){
+    blasterTimer -= dt;
+    const fireInterval = player.coreActive ? 0.06 : 0.1;
+    if(blasterTimer<=0){ fireBlaster(dt); blasterTimer = fireInterval; }
+  } else {
+    blasterTimer = Math.min(blasterTimer, 0);
+  }
+
+  /* --- missile firing --- */
+  if(player.missileCd>0) player.missileCd -= dt;
+  if(player.missileRegenCd>0) player.missileRegenCd -= dt;
+  else if(player.missiles<player.missilesMax){ player.missiles++; player.missileRegenCd = 2.6; }
+  if(firing.left) fireMissile();
+
+  if(player.shieldActive){
+    player.shieldTimer -= dt;
+    if(player.shieldTimer<=0){ player.shieldActive=false; player.shieldCd=player.shieldCdMax; }
+  } else if(player.shieldCd>0){ player.shieldCd -= dt; }
+  if(player.cannonCd>0) player.cannonCd -= dt;
+
+  /* --- update tracers --- */
+  for(let i=tracers.length-1;i>=0;i--){
+    tracers[i].life -= dt;
+    tracers[i].mesh.material.opacity = clamp(tracers[i].life/0.08,0,1);
+    if(tracers[i].life<=0){ scene.remove(tracers[i].mesh); tracers.splice(i,1); }
+  }
+
+  /* --- update missiles --- */
+  for(let i=missiles.length-1;i>=0;i--){
+    const m = missiles[i];
+    m.life -= dt;
+    if(m.target && m.target.alive){
+      const tgtPos = m.target.mesh.position.clone().add(m.target.chestOffset);
+      const toT = tgtPos.sub(m.pos).normalize();
+      m.dir.lerp(toT, clamp(2.2*dt,0,1)).normalize();
+    }
+    m.pos.addScaledVector(m.dir, m.speed*dt);
+    m.mesh.position.copy(m.pos);
+    m.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), m.dir);
+
+    let hit=false;
+    for(const en of enemies){
+      if(!en.alive) continue;
+      const r = en.type==='boss' ? 7.5 : 3.0;
+      if(m.pos.distanceTo(en.mesh.position.clone().add(en.chestOffset))<r){
+        damageEnemy(en, m.dmg, 16);
+        hit=true; break;
+      }
+    }
+    if(hit || m.life<=0){ scene.remove(m.mesh); missiles.splice(i,1); }
+  }
+
+  /* --- enemies --- */
+  for(const en of enemies){
+    if(!en.alive) continue;
+    const toPlayer = player.pos.clone().sub(en.mesh.position);
+    const dist = toPlayer.length();
+    const desiredYaw = Math.atan2(toPlayer.x, toPlayer.z);
+    en.mesh.rotation.y = lerpAngle(en.mesh.rotation.y, desiredYaw, clamp(2.0*dt,0,1));
+
+    if(en.staggered){
+      en.staggerTimer -= dt;
+      if(en.staggerTimer<=0){ en.staggered=false; en.stag=0; }
+    } else {
+      en.stag = Math.max(0, en.stag - 10*dt);
+    }
+
+    if(en.type==='boss' && dist>35){
+      en.mesh.position.addScaledVector(toPlayer.normalize(), 3.5*dt);
+    }
+
+    if(dist<en.detect && !en.staggered){
+      en.fireCd -= dt;
+      if(en.fireCd<=0){
+        en.fireCd = en.fireCdMax*(0.8+Math.random()*0.4);
+        const origin = en.mesh.position.clone().add(en.chestOffset);
+        const dir = player.pos.clone().add(new THREE.Vector3(0,1.5,0)).sub(origin).normalize();
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.35,8,8),
+          new THREE.MeshBasicMaterial({color: en.type==='boss'?0xffb347:0xff6b5b}));
+        mesh.position.copy(origin);
+        scene.add(mesh);
+        enemyShots.push({mesh, pos:origin.clone(), dir, speed:en.projSpeed, dmg:en.projDmg, life:5});
+      }
+    }
+
+    /* update floating tag position */
+    const screenPos = en.mesh.position.clone().add(new THREE.Vector3(0, en.chestOffset.y+1.6, 0)).project(camera);
+    if(screenPos.z<1){
+      en.tag.style.display='block';
+      en.tag.style.left = ((screenPos.x*0.5+0.5)*window.innerWidth)+'px';
+      en.tag.style.top = ((-screenPos.y*0.5+0.5)*window.innerHeight)+'px';
+      en.tag.querySelector('.ehpfill').style.width = clamp(en.hp/en.hpMax*100,0,100)+'%';
+      en.tag.querySelector('.estagfill').style.width = clamp(en.stag/en.stagMax*100,0,100)+'%';
+    } else {
+      en.tag.style.display='none';
+    }
+  }
+
+  /* --- enemy shots vs player --- */
+  for(let i=enemyShots.length-1;i>=0;i--){
+    const s = enemyShots[i];
+    s.life -= dt;
+    s.pos.addScaledVector(s.dir, s.speed*dt);
+    s.mesh.position.copy(s.pos);
+    if(s.pos.distanceTo(player.pos.clone().add(new THREE.Vector3(0,1.6,0)))<2.2){
+      const dmg = player.shieldActive ? s.dmg*0.25 : s.dmg;
+      player.ap = clamp(player.ap - dmg, 0, player.apMax);
+      scene.remove(s.mesh); enemyShots.splice(i,1);
+      if(player.ap<=0 && player.alive){ player.alive=false; endMission(false); }
+      continue;
+    }
+    if(s.life<=0){ scene.remove(s.mesh); enemyShots.splice(i,1); }
+  }
+
+  /* --- lock-on UI target --- */
+  const lockPanel = document.getElementById('lockPanel');
+  const crosshair = document.getElementById('crosshair');
+  const target = getLockedTarget(0.22, 90);
+  if(target){
+    crosshair.classList.add('locked');
+    lockPanel.style.display='block';
+    document.getElementById('lockName').textContent = target.type==='boss' ? 'IRON TITAN' : 'SENTINEL';
+    document.getElementById('lockHp').style.width = clamp(target.hp/target.hpMax*100,0,100)+'%';
+    document.getElementById('lockStag').style.width = clamp(target.stag/target.stagMax*100,0,100)+'%';
+  } else {
+    crosshair.classList.remove('locked');
+    lockPanel.style.display='none';
+  }
+
+  checkMissionProgress();
+  updateHUD();
+
+  if(flashTimer>0){
+    flashTimer -= dt;
+    document.getElementById('flashMsg').style.opacity = clamp(flashTimer,0,1);
+  }
+}
+
+function updateHUD(){
+  document.getElementById('apVal').textContent = Math.ceil(player.ap)+'/'+player.apMax;
+  document.getElementById('apBar').style.width = (player.ap/player.apMax*100)+'%';
+  document.getElementById('apBar').style.background = player.ap<250 ? 'var(--red)' : (player.ap<600?'var(--amber)':'var(--green)');
+
+  document.getElementById('boostVal').textContent = Math.round(player.boost);
+  document.getElementById('boostBar').style.width = (player.boost/player.boostMax*100)+'%';
+
+  document.getElementById('heatVal').textContent = (player.overheated?'OVERHEAT':Math.round(player.heat/player.heatMax*100)+'%');
+  document.getElementById('heatBar').style.width = (player.heat/player.heatMax*100)+'%';
+  document.getElementById('heatBar').style.background = player.overheated ? 'var(--red)' : 'var(--amber)';
+
+  document.getElementById('missileVal').textContent = player.missiles+'/'+player.missilesMax;
+  document.getElementById('missileBar').style.width = (player.missiles/player.missilesMax*100)+'%';
+
+  document.getElementById('coreVal').textContent = player.coreActive ? 'ACTIVE' : (player.coreOverheat ? 'OVERHEAT' : Math.round(player.coreMeter)+'%');
+  document.getElementById('coreBar').style.width = (player.coreActive?100:player.coreMeter)+'%';
+  document.getElementById('coreBar').style.background = player.coreOverheat ? 'var(--red)' : (player.coreMeter>=100?'var(--green)':'var(--amber)');
+
+  document.getElementById('shieldVal').textContent = player.shieldActive ? 'ACTIVE' : (player.shieldCd>0 ? Math.ceil(player.shieldCd)+'s' : 'READY');
+  document.getElementById('cannonVal').textContent = player.cannonCd>0 ? Math.ceil(player.cannonCd)+'s' : 'READY';
+}
+
+function render(){
+  renderer.render(scene, camera);
+}
+
+animate();
+})();
+</script>
+</body>
+</html>
